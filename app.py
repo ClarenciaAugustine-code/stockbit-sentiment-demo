@@ -8,7 +8,7 @@ from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassific
 from huggingface_hub import hf_hub_download
 import os
 
-HF_USERNAME   = "ClarenciaAugustine"    
+HF_USERNAME   = "ClarenciaAugustine"   
 HF_REPO_ID    = f"{HF_USERNAME}/stockbit-sentiment-models"
 FINBERT_NAME  = "michaelmanurung/finbert-indonesia"
 ROBERTA_PATH  = f"{HF_USERNAME}/stockbit-indoroberta"
@@ -57,7 +57,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Preprocessing ──────────────────────────
 SLANG_DICT = {
     'tp': 'ambil untung', 'cl': 'jual rugi', 'cuan': 'untung',
     'nyangkut': 'rugi', 'avg': 'rata rata', 'dyor': 'riset sendiri',
@@ -98,7 +97,6 @@ LABEL_MAP   = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
 LABEL_COLOR = {'Negatif': 'badge-negatif', 'Netral': 'badge-netral', 'Positif': 'badge-positif'}
 LABEL_EMOJI = {'Negatif': '🔴', 'Netral': '🟡', 'Positif': '🟢'}
 
-# ── Model Loading (cached) ──────────────────
 @st.cache_resource(show_spinner="⏳ Loading TF-IDF + SVM + RF...")
 def load_classical():
     tfidf = joblib.load(hf_hub_download(HF_REPO_ID, "tfidf_vectorizer_5k_last.pkl"))
@@ -124,9 +122,25 @@ def load_roberta():
     return tok, model, device
 
 # ── Prediction functions ────────────────────
+
+# Helper: normalize label apapun bentuknya (int, string, numpy)
+def normalize_label(pred):
+    """Handle label dalam bentuk int (0,1,2) ATAU string ('Negatif','Netral','Positif')."""
+
+    if isinstance(pred, str):
+        for k in LABEL_MAP.values():
+            if pred.lower() == k.lower():
+                return k
+        return pred  
+
+    try:
+        return LABEL_MAP.get(int(pred), str(pred))
+    except (ValueError, TypeError):
+        return str(pred)
+
 def predict_svm(text, tfidf, svm):
     vec  = tfidf.transform([preprocess_tfidf(text)])
-    pred = int(svm.predict(vec)[0])
+    pred = normalize_label(svm.predict(vec)[0])
     if hasattr(svm, 'decision_function'):
         scores = svm.decision_function(vec)[0]
         if np.ndim(scores) == 0:
@@ -134,19 +148,20 @@ def predict_svm(text, tfidf, svm):
         conf = float(softmax(scores).max())
     else:
         conf = 1.0
-    return LABEL_MAP.get(pred, str(pred)), conf
+    return pred, conf
 
 def predict_rf(text, tfidf, rf):
     vec   = tfidf.transform([preprocess_tfidf(text)])
     probs = rf.predict_proba(vec)[0]
-    return LABEL_MAP.get(int(np.argmax(probs))), float(probs.max())
+    pred  = normalize_label(rf.classes_[int(np.argmax(probs))])
+    return pred, float(probs.max())
 
 def predict_finbert(text, tok, model, svm_head, device):
     inputs = tok(preprocess_transformer(text), return_tensors='pt',
                  padding=True, truncation=True, max_length=128).to(device)
     with torch.no_grad():
         emb = model(**inputs).last_hidden_state[:, 0, :].cpu().numpy()
-    pred = int(svm_head.predict(emb)[0])
+    pred = normalize_label(svm_head.predict(emb)[0])
     if hasattr(svm_head, 'decision_function'):
         scores = svm_head.decision_function(emb)[0]
         if np.ndim(scores) == 0:
@@ -154,7 +169,7 @@ def predict_finbert(text, tok, model, svm_head, device):
         conf = float(softmax(scores).max())
     else:
         conf = 1.0
-    return LABEL_MAP.get(pred, str(pred)), conf
+    return pred, conf
 
 def predict_roberta(text, tok, model, device):
     inputs = tok(preprocess_transformer(text), return_tensors='pt',
@@ -164,7 +179,6 @@ def predict_roberta(text, tok, model, device):
     probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
     return LABEL_MAP.get(int(np.argmax(probs))), float(probs.max())
 
-# ── UI ─────────────────────────────────────
 st.markdown('<p class="main-title">📈 Demo Analisis Sentimen Stockbit</p>', unsafe_allow_html=True)
 st.markdown(
     '<p class="subtitle">Kelompok 15 — Natural Language Processing LH01 · BINUS University</p>',
@@ -183,42 +197,27 @@ with col_d:
 
 st.divider()
 
+# Input area
 st.markdown("### 💬 Masukkan komentar Stockbit")
 
-EXAMPLES = [
-    "BUMI naik terus nih, cuan banyak gw 🚀",
-    "duh ELSA nyangkut dalem, boncos parah hari ini",
-    "AADI mengumumkan akan melakukan stock split bulan depan",
-    "mantap sekali INET turun terus, makin murah buat dijual",
-    "ada yang tau alasan DEWA gap down pagi ini?",
-]
-
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    teks = st.text_area(
-        label="Teks komentar",
-        placeholder="Contoh: BUMI ARA terus nih, cuan banget!",
-        height=120,
-        label_visibility="collapsed"
-    )
-
-with col2:
-    st.markdown("**💡 Coba contoh:**")
-    for ex in EXAMPLES:
-        if st.button(ex[:40] + "...", key=ex, use_container_width=True):
-            teks = ex
-            st.session_state["teks_input"] = ex
+teks = st.text_area(
+    label="Teks komentar",
+    placeholder="Contoh: BUMI ARA terus nih, cuan banget!",
+    height=120,
+    label_visibility="collapsed"
+)
 
 predict_btn = st.button("🔍 Prediksi Sentimen", type="primary", use_container_width=True)
 
 if predict_btn and teks.strip():
     st.markdown("### 📊 Hasil Prediksi")
 
+
     with st.spinner("Loading models..."):
         tfidf, svm, rf           = load_classical()
         fin_tok, fin_model, svm_head, fin_dev = load_finbert()
         rob_tok, rob_model, rob_dev           = load_roberta()
+
 
     results = {}
     with st.spinner("Menjalankan prediksi..."):
@@ -226,6 +225,7 @@ if predict_btn and teks.strip():
         results["TF-IDF + Random Forest"] = predict_rf(teks, tfidf, rf)
         results["FinBERT + SVM"]          = predict_finbert(teks, fin_tok, fin_model, svm_head, fin_dev)
         results["Indo-RoBERTa ⭐"]         = predict_roberta(teks, rob_tok, rob_model, rob_dev)
+
 
     for model_name, (label, conf) in results.items():
         is_winner = "⭐" in model_name
