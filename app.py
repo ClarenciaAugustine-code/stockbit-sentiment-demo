@@ -8,16 +8,11 @@ from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassific
 from huggingface_hub import hf_hub_download
 import os
 
-# ─────────────────────────────────────────────
-# CONFIG — GANTI USERNAME HF KAMU DI SINI
-# ─────────────────────────────────────────────
-HF_USERNAME   = "kelompok15-nlp"          # ← ganti dengan username HF kamu
+HF_USERNAME   = "ClarenciaAugustine"    
 HF_REPO_ID    = f"{HF_USERNAME}/stockbit-sentiment-models"
 FINBERT_NAME  = "michaelmanurung/finbert-indonesia"
 ROBERTA_PATH  = f"{HF_USERNAME}/stockbit-indoroberta"
-# ─────────────────────────────────────────────
 
-# Page config
 st.set_page_config(
     page_title="Demo Sentimen Stockbit",
     page_icon="📈",
@@ -25,7 +20,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Custom CSS ──────────────────────────────
 st.markdown("""
 <style>
     .main-title {
@@ -177,7 +171,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Info strip
 col_a, col_b, col_c, col_d = st.columns(4)
 with col_a:
     st.metric("Model Klasifikasi", "4")
@@ -190,10 +183,8 @@ with col_d:
 
 st.divider()
 
-# Input area
 st.markdown("### 💬 Masukkan komentar Stockbit")
 
-# Contoh kalimat
 EXAMPLES = [
     "BUMI naik terus nih, cuan banyak gw 🚀",
     "duh ELSA nyangkut dalem, boncos parah hari ini",
@@ -219,19 +210,16 @@ with col2:
             teks = ex
             st.session_state["teks_input"] = ex
 
-# Tombol prediksi
 predict_btn = st.button("🔍 Prediksi Sentimen", type="primary", use_container_width=True)
 
 if predict_btn and teks.strip():
     st.markdown("### 📊 Hasil Prediksi")
 
-    # Load semua model
     with st.spinner("Loading models..."):
         tfidf, svm, rf           = load_classical()
         fin_tok, fin_model, svm_head, fin_dev = load_finbert()
         rob_tok, rob_model, rob_dev           = load_roberta()
 
-    # Jalankan prediksi
     results = {}
     with st.spinner("Menjalankan prediksi..."):
         results["TF-IDF + SVM"]           = predict_svm(teks, tfidf, svm)
@@ -239,7 +227,6 @@ if predict_btn and teks.strip():
         results["FinBERT + SVM"]          = predict_finbert(teks, fin_tok, fin_model, svm_head, fin_dev)
         results["Indo-RoBERTa ⭐"]         = predict_roberta(teks, rob_tok, rob_model, rob_dev)
 
-    # Tampilkan hasil
     for model_name, (label, conf) in results.items():
         is_winner = "⭐" in model_name
         card_class = "result-card winner" if is_winner else "result-card"
